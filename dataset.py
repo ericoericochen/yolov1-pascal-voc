@@ -10,7 +10,7 @@ class PascalVOC(Dataset):
     """
     PASCAL VOC Dataset with images resized to 448 x 448 and annotations transformed to YOLOv1 targets
     """
-    
+
     categories = {
         "aeroplane": 0,
         "bicycle": 1,
@@ -56,93 +56,97 @@ class PascalVOC(Dataset):
     def _one_hot(self, name: str) -> torch.Tensor:
         i = PascalVOC.categories[name]
         one_hot = F.one_hot(torch.tensor(i), num_classes=self.C)
-        
+
         return one_hot
-    
+
     def _target_from_annotation(self, annotation):
         # print(annotation)
         target = torch.zeros((self.S, self.S, 5 + self.C))
-        
+
         # get original dimensions of image
         size = annotation["annotation"]["size"]
         width, height = float(size["width"]), float(size["height"])
-        
+
         # scales to multiply by to resize dimensions to 448 x 448
         scale_x = self.IMAGE_SIZE / width
         scale_y = self.IMAGE_SIZE / height
-        
+
         # get annotated objects in image
         objects = annotation["annotation"]["object"]
-        
+
         # loop over objects' bounding boxes and create target tensor (p, x, y, w, h, ...C...)
         for obj in objects:
             name = obj["name"]
             box = obj["bndbox"]
-            xmin, xmax, ymin, ymax = float(box["xmin"]), float(box["xmax"]), float(box["ymin"]), float(box["ymax"])
-            
+            xmin, xmax, ymin, ymax = (
+                float(box["xmin"]),
+                float(box["xmax"]),
+                float(box["ymin"]),
+                float(box["ymax"]),
+            )
+
             print(xmin, xmax, ymin, ymax)
-            
+
             # scale dimensions to 448 x 448
             xmin *= scale_x
             xmax *= scale_x
             ymin *= scale_y
             ymax *= scale_y
-            
+
             print(xmin, xmax, ymin, ymax)
-            
+
             # normalized width and height
             width = (xmax - xmin) / self.IMAGE_SIZE
             height = (ymax - ymin) / self.IMAGE_SIZE
-            
+
             # print(f"width: {width}, height: {height}")
-            
+
             # get center of bounding box
             x = (xmin + xmax) / 2
             y = (ymin + ymax) / 2
-            
-#             print("scaled x, y")
-#             print((x, y))
-            
+
+            #             print("scaled x, y")
+            #             print((x, y))
+
             # get top left coordinate of grid cell
             grid_i = int(x // self.GRID_SIZE)
             grid_j = int(y // self.GRID_SIZE)
-            
+
             grid_x = grid_i * self.GRID_SIZE
             grid_y = grid_j * self.GRID_SIZE
-            
+
             # print((grid_x, grid_y))
-            
+
             # get normalized offsets
             x = (x - grid_x) / self.GRID_SIZE
             y = (y - grid_y) / self.GRID_SIZE
-            
+
             # print("offsets")
             # print((x, y))
-            
+
             # construct target tensor
-            box_tensor = torch.tensor([1, x, y, width, height]) # (p, x, y, w, h)
+            box_tensor = torch.tensor([1, x, y, width, height])  # (p, x, y, w, h)
             # print("box tensor")
             # print(box_tensor)
-            
+
             # one-hot encoding for classification
             # print("one hot")
             classification_tensor = self._one_hot(name)
-            
+
             target_tensor = torch.cat((box_tensor, classification_tensor), dim=0)
-            
+
             # get current tensor at grid location
             grid_cell = target[grid_i][grid_j]
-            
-#             print("grid cell")
-#             print(grid_cell, grid_cell.shape)
-            
-#             print(target_tensor, target_tensor.shape)
-            
+
+            #             print("grid cell")
+            #             print(grid_cell, grid_cell.shape)
+
+            #             print(target_tensor, target_tensor.shape)
+
             # add target tensor to target
             target[grid_j][grid_i] = target_tensor
-            
+
         return target
-        
 
     def __len__(self):
         return len(self.dataset)
