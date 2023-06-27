@@ -80,7 +80,7 @@ class PascalVOC(Dataset):
             box = obj["bndbox"]
             xmin, xmax, ymin, ymax = float(box["xmin"]), float(box["xmax"]), float(box["ymin"]), float(box["ymax"])
             
-            # print(xmin, xmax, ymin, ymax)
+            print(xmin, xmax, ymin, ymax)
             
             # scale dimensions to 448 x 448
             xmin *= scale_x
@@ -88,7 +88,7 @@ class PascalVOC(Dataset):
             ymin *= scale_y
             ymax *= scale_y
             
-            # print(xmin, xmax, ymin, ymax)
+            print(xmin, xmax, ymin, ymax)
             
             # normalized width and height
             width = (xmax - xmin) / self.IMAGE_SIZE
@@ -139,7 +139,7 @@ class PascalVOC(Dataset):
 #             print(target_tensor, target_tensor.shape)
             
             # add target tensor to target
-            target[grid_i][grid_j] = target_tensor
+            target[grid_j][grid_i] = target_tensor
             
         return target
         
