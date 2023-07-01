@@ -85,7 +85,7 @@ class PascalVOC(Dataset):
                 float(box["ymax"]),
             )
 
-            print(xmin, xmax, ymin, ymax)
+            # print(xmin, xmax, ymin, ymax)
 
             # scale dimensions to 448 x 448
             xmin *= scale_x
@@ -93,7 +93,7 @@ class PascalVOC(Dataset):
             ymin *= scale_y
             ymax *= scale_y
 
-            print(xmin, xmax, ymin, ymax)
+            # print(xmin, xmax, ymin, ymax)
 
             # normalized width and height
             width = (xmax - xmin) / self.IMAGE_SIZE
