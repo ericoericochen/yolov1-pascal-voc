@@ -52,6 +52,8 @@ class ResNet18YOLOv1(nn.Module):
 
     def forward(self, x):
         x = self.resnet(x)
+        # print(x.shape)
+        
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         x = x.view(-1, self.S, self.S, 5 * self.B + self.C)

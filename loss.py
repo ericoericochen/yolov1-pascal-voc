@@ -52,7 +52,7 @@ class YOLOv1Loss(nn.Module):
         pred: (N x S x S x (5 * B + C))
         target: (N x S x S x (5 + C))
         """
-        print("CALCULATING YOLO LOSS")
+        # print("CALCULATING YOLO LOSS")
 
         # check pred and target are in the correct shape
         assert len(pred) == len(target)
@@ -81,6 +81,9 @@ class YOLOv1Loss(nn.Module):
         obj_pred_bndbox = obj_pred[:, : 5 * B].view(
             -1, B, 5
         )  # (num_obj, 5*B+C) -> (num_obj, B, 5)
+        
+        
+        
         obj_target_bndbox = obj_target[:, :5].view(
             -1, 1, 5
         )  # (num_obj, 5*B+C) -> (num_obj, 1, 5)
@@ -98,7 +101,11 @@ class YOLOv1Loss(nn.Module):
         )  # (num_noobj, 5*B+C) -> (num_noobj, 1, 5)
 
         # calculate ious
-        max_iou_mask = torch.BoolTensor(obj_pred_bndbox.size())
+        # max_iou_mask = torch.BoolTensor(obj_pred_bndbox.size())
+        max_iou_mask = torch.zeros(obj_pred_bndbox.size(), dtype=torch.bool)
+        # print(f"MAX IOUS MASK: {max_iou_mask.shape}")
+        # print(max_iou_mask)
+        
         for i in range(obj_pred_bndbox.size(0)):
             # get proposed boxes and target box
             pred_bndbox = obj_pred_bndbox[i][:, 1:]  # (B, 4)
@@ -114,7 +121,10 @@ class YOLOv1Loss(nn.Module):
             # get the box with the max iou and keep in mask
             max_iou, max_idx = ious.max(dim=0)
             max_iou_mask[i, max_idx] = 1
-
+        
+        # print(f"OBJ PRED BNDBOX: {obj_pred_bndbox.shape}")
+        # print(f"OBJ PRED MAX IOU: {obj_pred_bndbox[max_iou_mask].shape}")
+            
         # responsible predictors
         obj_pred_bndbox = obj_pred_bndbox[max_iou_mask].view(-1, 5)  # (num_obj, 5)
         obj_target_bndbox = obj_target_bndbox.squeeze(1)  # (num_obj, 5)
@@ -124,6 +134,9 @@ class YOLOv1Loss(nn.Module):
         ###
         pred_xy = obj_pred_bndbox[:, 1:3]
         target_xy = obj_target_bndbox[:, 1:3]
+        
+        # print(pred_xy.shape, target_xy.shape)
+        
         xy_loss = lambda_coord * F.mse_loss(pred_xy, target_xy, reduction="sum")
 
         pred_wh = torch.sqrt(obj_pred_bndbox[:, 3:5])
