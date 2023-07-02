@@ -131,6 +131,9 @@ class YOLOv1Loss(nn.Module):
         wh_loss = lambda_coord * F.mse_loss(pred_wh, target_wh, reduction="sum")
 
         localization_loss = xy_loss + wh_loss
+        
+        # print("LOCALIZATION")
+        # print(localization_loss)
 
         ###
         # Confidence Loss
@@ -150,6 +153,9 @@ class YOLOv1Loss(nn.Module):
         )
 
         confidence_loss = obj_confidence_loss + noobj_confidence_loss
+        
+        # print("CONFIDENCE")
+        # print(confidence_loss)
 
         ###
         # Classification Loss
@@ -159,6 +165,9 @@ class YOLOv1Loss(nn.Module):
         classification_loss = F.mse_loss(
             obj_pred_classification, obj_target_classification, reduction="sum"
         )
+        
+        # print("CLASSIFICATION")
+        # print(classification_loss)
 
         # total loss
         loss = (localization_loss + confidence_loss + classification_loss) / N
