@@ -39,7 +39,7 @@ class PascalVOC(Dataset):
 
         self.S = 7  # grid size
         self.C = 20  # num categories
-        self.IMAGE_SIZE = 448
+        self.IMAGE_SIZE = 224
         self.GRID_SIZE = self.IMAGE_SIZE / self.S
 
         self.dataset = pascal_voc  # original dataset

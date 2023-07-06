@@ -1,5 +1,6 @@
 import torch.nn as nn
-from torchvision.models import resnet18
+import torch
+from torchvision.models import resnet18, resnet34, resnet50
 
 
 class ResNet18YOLOv1(nn.Module):
@@ -10,15 +11,17 @@ class ResNet18YOLOv1(nn.Module):
         self.C = C
         self.resnet = self.init_resnet()
         self.fc = nn.Sequential(
+            # nn.Linear(4608, 4096),
             nn.Linear(7 * 7 * 512, 4096),
-            nn.LeakyReLU(0.1),
             nn.Dropout(p=0.5, inplace=True),
+            nn.LeakyReLU(0.1),
             nn.Linear(4096, self.S**2 * (5 * self.B + self.C)),
-            nn.Sigmoid()
         )
 
     def init_resnet(self):
         resnet = resnet18(weights="IMAGENET1K_V1")
+        
+        # print(resnet)
 
         # replace relu with leaky relu
         resnet = self.replace_with_leaky_relu(resnet)
@@ -57,5 +60,6 @@ class ResNet18YOLOv1(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         x = x.view(-1, self.S, self.S, 5 * self.B + self.C)
+        # x = nn.ReLU()(x)
 
         return x

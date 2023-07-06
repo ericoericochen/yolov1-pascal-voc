@@ -67,6 +67,8 @@ class YOLOv1Loss(nn.Module):
 
         assert pred.shape == torch.Size((N, S, S, 5 * B + C))
         assert target.shape == torch.Size((N, S, S, 5 + C))
+        
+        # clone everything (temporary)
 
         # obj, noobj mask: select bounding boxes whose target bounding box has a confidence=1 for obj and confidence=0
         # for noobj
@@ -82,11 +84,8 @@ class YOLOv1Loss(nn.Module):
             -1, B, 5
         )  # (num_obj, 5*B+C) -> (num_obj, B, 5)
         
-        
-        
-        obj_target_bndbox = obj_target[:, :5].view(
-            -1, 1, 5
-        )  # (num_obj, 5*B+C) -> (num_obj, 1, 5)
+        obj_target_bndbox = obj_target[:, :5].view(-1, 1, 5).clone() # (num_obj, 5*B+C) -> (num_obj, 1, 5)
+        # we clone because we don't want to change the original target tensor
 
         # select predictions and targets where ground grouth does not contain an object
         noobj_pred = pred[noobj_mask]  # (num_noobj, 5*B+C)
@@ -101,11 +100,7 @@ class YOLOv1Loss(nn.Module):
         )  # (num_noobj, 5*B+C) -> (num_noobj, 1, 5)
 
         # calculate ious
-        # max_iou_mask = torch.BoolTensor(obj_pred_bndbox.size())
-        max_iou_mask = torch.zeros(obj_pred_bndbox.size(), dtype=torch.bool)
-        # print(f"MAX IOUS MASK: {max_iou_mask.shape}")
-        # print(max_iou_mask)
-        
+        max_iou_mask = torch.zeros(obj_pred_bndbox.size(), dtype=torch.bool)        
         for i in range(obj_pred_bndbox.size(0)):
             # get proposed boxes and target box
             pred_bndbox = obj_pred_bndbox[i][:, 1:]  # (B, 4)
@@ -121,9 +116,12 @@ class YOLOv1Loss(nn.Module):
             # get the box with the max iou and keep in mask
             max_iou, max_idx = ious.max(dim=0)
             max_iou_mask[i, max_idx] = 1
-        
-        # print(f"OBJ PRED BNDBOX: {obj_pred_bndbox.shape}")
-        # print(f"OBJ PRED MAX IOU: {obj_pred_bndbox[max_iou_mask].shape}")
+            
+            # set the confidence of the corresponding target box to be the max iou
+            obj_target_bndbox[i][0][0] = max_iou
+            # print("SET CONFIDENCE TO MAX IOU")
+            # print(ious)
+            # print(max_iou)
             
         # responsible predictors
         obj_pred_bndbox = obj_pred_bndbox[max_iou_mask].view(-1, 5)  # (num_obj, 5)
@@ -133,20 +131,18 @@ class YOLOv1Loss(nn.Module):
         # Bounding Box Loss
         ###
         pred_xy = obj_pred_bndbox[:, 1:3]
-        target_xy = obj_target_bndbox[:, 1:3]
-        
-        # print(pred_xy.shape, target_xy.shape)
-        
+        target_xy = obj_target_bndbox[:, 1:3]        
         xy_loss = lambda_coord * F.mse_loss(pred_xy, target_xy, reduction="sum")
 
-        pred_wh = torch.sqrt(obj_pred_bndbox[:, 3:5])
-        target_wh = torch.sqrt(obj_target_bndbox[:, 3:5])
+        pred_wh = obj_pred_bndbox[:, 3:5].sqrt()
+        target_wh = obj_target_bndbox[:, 3:5].sqrt()
         wh_loss = lambda_coord * F.mse_loss(pred_wh, target_wh, reduction="sum")
 
         localization_loss = xy_loss + wh_loss
         
-        # print("LOCALIZATION")
-        # print(localization_loss)
+#         print("LOCALIZATION")
+#         print(pred_xy, target_xy)
+#         print(pred_wh, target_wh)
 
         ###
         # Confidence Loss
@@ -156,6 +152,9 @@ class YOLOv1Loss(nn.Module):
         obj_confidence_loss = F.mse_loss(
             obj_pred_confidence, obj_target_confidence, reduction="sum"
         )
+        
+        # print(obj_target_bndbox)
+        # print(obj_target_confidence)
 
         noobj_pred_confidence = noobj_pred_bndbox[:, :, 0]  # (num_noobj, 2)
         noobj_target_confidence = noobj_target_bndbox[:, :, 0][
@@ -164,11 +163,11 @@ class YOLOv1Loss(nn.Module):
         noobj_confidence_loss = lambda_noobj * F.mse_loss(
             noobj_pred_confidence, noobj_target_confidence, reduction="sum"
         )
-
-        confidence_loss = obj_confidence_loss + noobj_confidence_loss
         
         # print("CONFIDENCE")
-        # print(confidence_loss)
+        # print(noobj_pred_confidence, noobj_target_confidence)
+
+        confidence_loss = obj_confidence_loss + noobj_confidence_loss
 
         ###
         # Classification Loss
@@ -180,9 +179,12 @@ class YOLOv1Loss(nn.Module):
         )
         
         # print("CLASSIFICATION")
-        # print(classification_loss)
+        # print(obj_pred_classification, obj_target_classification)
 
         # total loss
         loss = (localization_loss + confidence_loss + classification_loss) / N
+        
+        print(f"obj confidence: {obj_confidence_loss}, noobj confidence: {noobj_confidence_loss}")
+        print(f"localization: {localization_loss}, confidence: {confidence_loss}, classification: {classification_loss}")
 
         return loss
