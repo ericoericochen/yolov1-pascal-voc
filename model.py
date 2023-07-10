@@ -11,11 +11,11 @@ class ResNet18YOLOv1(nn.Module):
         self.C = C
         self.resnet = self.init_resnet()
         self.fc = nn.Sequential(
-            # nn.Linear(4608, 4096),
             nn.Linear(7 * 7 * 512, 4096),
             nn.Dropout(p=0.5, inplace=True),
             nn.LeakyReLU(0.1),
             nn.Linear(4096, self.S**2 * (5 * self.B + self.C)),
+            # nn.Sigmoid()
         )
 
     def init_resnet(self):
