@@ -32,15 +32,19 @@ class Loss(nn.Module):
         return xyxy_tensor
 
     def forward(self, pred, target):
+        # get parameters of loss function
         S = self.S
         B = self.B
         C = self.C
         lambda_coord = self.lambda_coord
         lambda_noobj = self.lambda_noobj
 
+        # batch size
         N = pred.size(0)
-        pred = pred.view(-1, 5 * B + C)
-        target = target.view(-1, 5 + C)
+        
+        # flatten pred and target to a 2-dim tensor
+        pred = pred.view(-1, 5 * B + C) # (-1, 5B + C)
+        target = target.view(-1, 5 + C) # (-1, 5 + C)
 
         # masks
         obj_mask = target[..., 0] == 1
@@ -55,10 +59,11 @@ class Loss(nn.Module):
         noobj_target = target[noobj_mask]
 
         # select responsible bounding boxes
-        obj_pred_bbox = obj_pred[..., :-C].view(-1, B, 5)
+        obj_pred_bbox = obj_pred[..., :-C].view(-1, B, 5) # (-1, B, 5)
         obj_target_bbox = obj_target[..., :-C].view(-1, 1, 5).clone()
-        obj_target_bbox_ = obj_target[..., :-C].view(-1, 1, 5).clone()
-
+        # obj_target_bbox_ = obj_target[..., :-C].view(-1, 1, 5).clone()
+        
+        # grid indices so that we can calculate gx and gy
         grid_indices = torch.arange(0, S * S).to(pred.device)[obj_mask]
         num_obj = obj_target.size(0)
         max_iou_mask = torch.zeros((num_obj, B), dtype=torch.bool)
@@ -77,12 +82,13 @@ class Loss(nn.Module):
 
             # get ious
             ious = box_iou(pred_bbox, target_bbox)
-            # ious = calculate_iou(pred_bbox, target_bbox)
+            
+            # get the max iou and set that as the target
             max_iou, indices = torch.max(ious, dim=0)
             max_iou, indices = max_iou[0], indices[0]
 
+            # set the mask so that the responsible bounding box gets chosen
             max_iou_mask[i][indices] = 1
-
             obj_target_bbox[i][0][0] = max_iou
 
         obj_responsible_bbox = obj_pred_bbox[max_iou_mask]
@@ -90,16 +96,20 @@ class Loss(nn.Module):
         ###
         # Localization Loss
         ###
+        # xy mse loss
         pred_xy = obj_responsible_bbox[..., 1:3]
         target_xy = obj_target_bbox[..., 1:3].squeeze(1)
         xy_loss = self.mse(pred_xy, target_xy)
 
+        # wh mse loss
         pred_wh = obj_responsible_bbox[..., 3:]
         target_wh = obj_target_bbox[..., 3:].squeeze(1)
         pred_wh = (pred_wh**2).sqrt()
         target_wh = (target_wh**2).sqrt()
+        
         wh_loss = self.mse(pred_wh.sqrt(), target_wh.sqrt())
 
+        
         localization_loss = lambda_coord * (xy_loss + wh_loss)
 
         ###
@@ -124,7 +134,6 @@ class Loss(nn.Module):
         ###
         # Classification Loss
         ###
-        # print("CLASSIFICATION LOSS")
         pred_classification = obj_pred[..., -C:]
         target_classification = obj_target[..., -C:]
         classification_loss = self.mse(pred_classification, target_classification)
