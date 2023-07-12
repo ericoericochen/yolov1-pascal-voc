@@ -118,7 +118,7 @@ def average_precision(pred, target, c, iou_threshold=0.5):
         
         num_TP_FN = target_boxes.size(0)
         num_TP_FP = pred_boxes.size(0)
-        TP_FP_vec = torch.zeros(num_TP_FP)
+        TP_FP_vec = torch.zeros(num_TP_FP, device=pred_boxes.device)
 
         # number of target boxes = TP_FN
         TP_FN += num_TP_FN
@@ -165,14 +165,14 @@ def average_precision(pred, target, c, iou_threshold=0.5):
     # calculate precision and recall
     # precision = TP / (TP + FP) (predictions), recall = TP / (TP + FN) (ground truths)
     # P = torch.cumsum(torch.ones_like(TP), dim=0)
-    P = torch.arange(1, TP.size(0) + 1)
+    P = torch.arange(1, TP.size(0) + 1, device="cuda")
     
     precision = TP / P
     recall = TP / TP_FN
     
     # add 1 in front of precision and 0 in front of recall
-    precision = torch.cat((torch.tensor([1]), precision))
-    recall = torch.cat((torch.tensor([0]), recall))
+    precision = torch.cat((torch.tensor([1], device="cuda"), precision))
+    recall = torch.cat((torch.tensor([0], device="cuda"), recall))
     
     # area under PR-curve
     auc = torch.trapezoid(precision, recall)

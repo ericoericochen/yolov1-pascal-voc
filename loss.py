@@ -47,7 +47,7 @@ class YOLOv1Loss(nn.Module):
         N = pred.size(0)
         
         # make all values from prediction positive
-        pred = pred.square().sqrt()
+        pred = (pred + 1e-6).square().sqrt() # numerical stability
         
         # flatten pred and target to a 2-dim tensor
         pred = pred.view(-1, 5 * B + C) # (-1, 5B + C)
