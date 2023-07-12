@@ -33,10 +33,29 @@ class PascalVOC(Dataset):
         "train": 18,
         "tvmonitor": 19,
     }
+    
+    categories_list = ["aeroplane",
+        "bicycle",
+        "bird",
+        "boat",
+        "bottle",
+        "bus",
+        "car",
+        "cat",
+        "chair",
+        "cow",
+        "diningtable",
+        "dog",
+        "horse",
+        "motorbike",
+        "person",
+        "pottedplant",
+        "sheep",
+        "sofa",
+        "train",
+        "tvmonitor",]
 
     def __init__(self, pascal_voc: VOCDetection):
-        print(f"TRANSFORMING PASCAL VOC")
-
         self.S = 7  # grid size
         self.C = 20  # num categories
         self.IMAGE_SIZE = 224

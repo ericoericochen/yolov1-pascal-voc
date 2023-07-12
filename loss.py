@@ -1,190 +1,147 @@
 import torch
 import torch.nn as nn
 from torchvision.ops import box_iou
-import torch.nn.functional as F
 
 
 class YOLOv1Loss(nn.Module):
-    """
-    YOLOv1 Loss
-    """
-
     def __init__(self, S=7, B=2, C=20, lambda_coord=5, lambda_noobj=0.5):
-        """
-        S: dimension of the S x S grid
-        B: number of bounding boxes predicted by network
-        C: number of classes
-        lambda_coord: penalty for coord loss
-        lambda_noobj: penalty for confidence loss when no object is present in target
-        """
         super().__init__()
-
         self.S = S
         self.B = B
         self.C = C
-        self.lambda_coord = lambda_coord
-        self.lambda_noobj = lambda_noobj
-
-    def xywh_to_x1y1x2y2(self, boxes: torch.Tensor) -> torch.Tensor:
-        """
-        Converts YOLO bounding box format to (x1, y1, x2, y2)
-
-        pred: (X, 4)
-
-        returns (X, 4)
-        """
-        x = boxes[..., 0]  # (N, S^2, X)
-        y = boxes[..., 1]
-        w = boxes[..., 2]
-        h = boxes[..., 3]
-
-        x1 = x - w / 2
-        y1 = y - h / 2
-        x2 = x + w / 2
-        y2 = y + h / 2
-
-        x1y1x2y2 = torch.stack((x1, y1, x2, y2), dim=1)
-
+        self.lambda_coord = 5
+        self.lambda_noobj = 0.5
+        self.mse = nn.MSELoss(reduction="sum")
+    
+    def convert_xywh_to_x1y1x2y2(self, xywh, grid_idx):
+        S = self.S
+        gx = grid_idx % S
+        gy = grid_idx // S
+        
+        x = xywh[:, 0]
+        y = xywh[:, 1]
+        w = xywh[:, 2]
+        h = xywh[:, 3]
+        
+        x_c = (gx + x) / S
+        y_c = (gy + y) / S
+        
+        x1 = x_c - w / 2
+        y1 = y_c - h / 2
+        x2 = x_c + w / 2
+        y2 = y_c + h / 2
+        
+        x1y1x2y2 = torch.stack((x1, y1, x2, y2), dim=1)        
         return x1y1x2y2
+        
 
     def forward(self, pred, target):
-        """
-        pred: (N x S x S x (5 * B + C))
-        target: (N x S x S x (5 + C))
-        """
-        # print("CALCULATING YOLO LOSS")
-
-        # check pred and target are in the correct shape
-        assert len(pred) == len(target)
-        N = pred.size(0)
-
-        # get parameters of YOLO loss
+        # get parameters of loss function
         S = self.S
         B = self.B
         C = self.C
         lambda_coord = self.lambda_coord
         lambda_noobj = self.lambda_noobj
 
-        assert pred.shape == torch.Size((N, S, S, 5 * B + C))
-        assert target.shape == torch.Size((N, S, S, 5 + C))
+        # batch size
+        N = pred.size(0)
         
-        # clone everything (temporary)
-
-        # obj, noobj mask: select bounding boxes whose target bounding box has a confidence=1 for obj and confidence=0
-        # for noobj
-        obj_mask = target[:, :, :, 0] == 1
-        noobj_mask = target[:, :, :, 0] == 0
-
-        # select predictions and targets where ground truth contains an object
-        obj_pred = pred[obj_mask]  # (num_obj, 5*B+C)
-        obj_target = target[obj_mask]  # (num_obj, 5+C)
-
-        # get bounding boxes
-        obj_pred_bndbox = obj_pred[:, : 5 * B].view(
-            -1, B, 5
-        )  # (num_obj, 5*B+C) -> (num_obj, B, 5)
+        # make all values from prediction positive
+        pred = pred.square().sqrt()
         
-        obj_target_bndbox = obj_target[:, :5].view(-1, 1, 5).clone() # (num_obj, 5*B+C) -> (num_obj, 1, 5)
-        # we clone because we don't want to change the original target tensor
+        # flatten pred and target to a 2-dim tensor
+        pred = pred.view(-1, 5 * B + C) # (-1, 5B + C)
+        target = target.view(-1, 5 + C) # (-1, 5 + C)
 
-        # select predictions and targets where ground grouth does not contain an object
-        noobj_pred = pred[noobj_mask]  # (num_noobj, 5*B+C)
-        noobj_target = target[noobj_mask]  # (num_obj, 5+C)
+        # masks
+        obj_mask = target[..., 0] == 1
+        noobj_mask = target[..., 0] == 0
 
-        # get bounding boxes for target's whose confidenc=0
-        noobj_pred_bndbox = noobj_pred[:, : 5 * B].view(
-            -1, B, 5
-        )  # (num_noobj, 5*B+C) -> (num_noobj, B, 5)
-        noobj_target_bndbox = noobj_target[:, :5].view(
-            -1, 1, 5
-        )  # (num_noobj, 5*B+C) -> (num_noobj, 1, 5)
+        # get predictions and targets that contain an object, confidence=1
+        obj_pred = pred[obj_mask]
+        obj_target = target[obj_mask]
 
-        # calculate ious
-        max_iou_mask = torch.zeros(obj_pred_bndbox.size(), dtype=torch.bool)        
-        for i in range(obj_pred_bndbox.size(0)):
-            # get proposed boxes and target box
-            pred_bndbox = obj_pred_bndbox[i][:, 1:]  # (B, 4)
-            target_bndbox = obj_target_bndbox[i][:, 1:]  # (1, 4)
+        # get predictions and targets that do not contain object, confidence=1
+        noobj_pred = pred[noobj_mask]
+        noobj_target = target[noobj_mask]
 
-            # convert (x, y, w, h) -> (x1, y1, x2, y2)
-            pred_bndbox = self.xywh_to_x1y1x2y2(pred_bndbox)
-            target_bndbox = self.xywh_to_x1y1x2y2(target_bndbox)
+        # select responsible bounding boxes
+        obj_pred_bbox = obj_pred[..., :-C].view(-1, B, 5) # (-1, B, 5)
+        obj_target_bbox = obj_target[..., :-C].view(-1, 1, 5).clone()
+        
+        # grid indices so that we can calculate gx and gy
+        grid_indices = torch.arange(0, S * S).to(pred.device)[obj_mask]
+        num_obj = obj_target.size(0)
+        max_iou_mask = torch.zeros((num_obj, B), dtype=torch.bool)
 
-            # get box ious
-            ious = box_iou(pred_bndbox, target_bndbox).squeeze(-1)  # (B)
-
-            # get the box with the max iou and keep in mask
-            max_iou, max_idx = ious.max(dim=0)
-            max_iou_mask[i, max_idx] = 1
+        # for every target box that contains an object
+        # set the target of the confidence score to be the max IOU and select the responsible predictor
+        for i in range(num_obj):
+            grid_index = grid_indices[i]
+            pred_bbox = obj_pred_bbox[i][..., 1:].square().sqrt()
+            target_bbox = obj_target_bbox[i][:, 1:5]
             
-            # set the confidence of the corresponding target box to be the max iou
-            obj_target_bndbox[i][0][0] = max_iou
-            # print("SET CONFIDENCE TO MAX IOU")
-            # print(ious)
-            # print(max_iou)
+            # convert to xyxy format
+            pred_bbox = self.convert_xywh_to_x1y1x2y2(pred_bbox, grid_index)
+            target_bbox = self.convert_xywh_to_x1y1x2y2(target_bbox, grid_index)
+
+            # get ious
+            ious = box_iou(pred_bbox, target_bbox)
             
-        # responsible predictors
-        obj_pred_bndbox = obj_pred_bndbox[max_iou_mask].view(-1, 5)  # (num_obj, 5)
-        obj_target_bndbox = obj_target_bndbox.squeeze(1)  # (num_obj, 5)
+            # get the max iou and set that as the target
+            max_iou, indices = torch.max(ious, dim=0)
+            max_iou, indices = max_iou[0], indices[0]
+
+            # set the mask so that the responsible bounding box gets chosen
+            max_iou_mask[i][indices] = 1
+            obj_target_bbox[i][0][0] = max_iou
+
+        obj_responsible_bbox = obj_pred_bbox[max_iou_mask]
 
         ###
-        # Bounding Box Loss
+        # Localization Loss
         ###
-        pred_xy = obj_pred_bndbox[:, 1:3]
-        target_xy = obj_target_bndbox[:, 1:3]        
-        xy_loss = lambda_coord * F.mse_loss(pred_xy, target_xy, reduction="sum")
+        # xy mse loss
+        pred_xy = obj_responsible_bbox[..., 1:3]
+        target_xy = obj_target_bbox[..., 1:3].squeeze(1)
+        xy_loss = self.mse(pred_xy, target_xy)
 
-        pred_wh = obj_pred_bndbox[:, 3:5].sqrt()
-        target_wh = obj_target_bndbox[:, 3:5].sqrt()
-        wh_loss = lambda_coord * F.mse_loss(pred_wh, target_wh, reduction="sum")
-
-        localization_loss = xy_loss + wh_loss
+        # wh mse loss
+        pred_wh = obj_responsible_bbox[..., 3:]
+        target_wh = obj_target_bbox[..., 3:].squeeze(1)
+        # pred_wh = (pred_wh**2).sqrt()
+        # target_wh = (target_wh**2).sqrt()
         
-#         print("LOCALIZATION")
-#         print(pred_xy, target_xy)
-#         print(pred_wh, target_wh)
+        wh_loss = self.mse(pred_wh.sqrt(), target_wh.sqrt())
+
+        localization_loss = lambda_coord * (xy_loss + wh_loss)
 
         ###
         # Confidence Loss
         ###
-        obj_pred_confidence = obj_pred_bndbox[:, 0]
-        obj_target_confidence = obj_target_bndbox.squeeze(1)[:, 0]
-        obj_confidence_loss = F.mse_loss(
-            obj_pred_confidence, obj_target_confidence, reduction="sum"
-        )
-        
-        # print(obj_target_bndbox)
-        # print(obj_target_confidence)
 
-        noobj_pred_confidence = noobj_pred_bndbox[:, :, 0]  # (num_noobj, 2)
-        noobj_target_confidence = noobj_target_bndbox[:, :, 0][
-            :, [0, 0]
-        ]  # (num_noobj, 2) -> duplicated target for every bounding box
-        noobj_confidence_loss = lambda_noobj * F.mse_loss(
-            noobj_pred_confidence, noobj_target_confidence, reduction="sum"
+        # obj: confidence = 1
+        obj_pred_confidence = obj_responsible_bbox[..., 0]
+        target_ious = obj_target_bbox[..., 0].squeeze(1)
+        obj_confidence_loss = self.mse(obj_pred_confidence, target_ious)
+
+        # noobj: confidence = 0
+        noobj_pred_bbox = noobj_pred[..., : 5 * B]
+        noobj_pred_confidence = noobj_pred_bbox[..., 0::5]
+        noobj_target_confidence = torch.zeros_like(noobj_pred_confidence)
+        noobj_confidence_loss = lambda_noobj * self.mse(
+            noobj_pred_confidence, noobj_target_confidence
         )
-        
-        # print("CONFIDENCE")
-        # print(noobj_pred_confidence, noobj_target_confidence)
 
         confidence_loss = obj_confidence_loss + noobj_confidence_loss
 
         ###
         # Classification Loss
         ###
-        obj_pred_classification = obj_pred[:, -C:]  # (num_obj, C)
-        obj_target_classification = obj_target[:, -C:]  # (num_obj, C)
-        classification_loss = F.mse_loss(
-            obj_pred_classification, obj_target_classification, reduction="sum"
-        )
-        
-        # print("CLASSIFICATION")
-        # print(obj_pred_classification, obj_target_classification)
+        pred_classification = obj_pred[..., -C:]
+        target_classification = obj_target[..., -C:]
+        classification_loss = self.mse(pred_classification, target_classification)
 
-        # total loss
         loss = (localization_loss + confidence_loss + classification_loss) / N
-        
-        print(f"obj confidence: {obj_confidence_loss}, noobj confidence: {noobj_confidence_loss}")
-        print(f"localization: {localization_loss}, confidence: {confidence_loss}, classification: {classification_loss}")
 
         return loss

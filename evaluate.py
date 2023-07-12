@@ -197,7 +197,3 @@ def mean_average_precision(pred, target, iou_threshold=0.5, C=20):
     # compute the mean of the APs
     mAP = total_ap / C
     return mAP
-
-
-def compute_mAP(model, dataloader):
-    pass
