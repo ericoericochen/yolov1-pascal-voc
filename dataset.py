@@ -58,9 +58,8 @@ class PascalVOC(Dataset):
     def __init__(self, pascal_voc: VOCDetection):
         self.S = 7  # grid size
         self.C = 20  # num categories
-        self.IMAGE_SIZE = 224
+        self.IMAGE_SIZE = 448
         self.GRID_SIZE = self.IMAGE_SIZE / self.S
-
         self.dataset = pascal_voc  # original dataset
 
         # resize to 448 x 448 image and normalize

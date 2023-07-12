@@ -70,7 +70,7 @@ class YOLOv1Loss(nn.Module):
         obj_target_bbox = obj_target[..., :-C].view(-1, 1, 5).clone()
         
         # grid indices so that we can calculate gx and gy
-        grid_indices = torch.arange(0, S * S).to(pred.device)[obj_mask]
+        grid_indices = torch.arange(0, S * S).repeat(N).to(pred.device)[obj_mask]
         num_obj = obj_target.size(0)
         max_iou_mask = torch.zeros((num_obj, B), dtype=torch.bool)
 
