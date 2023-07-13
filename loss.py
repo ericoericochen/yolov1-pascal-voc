@@ -46,9 +46,6 @@ class YOLOv1Loss(nn.Module):
         # batch size
         N = pred.size(0)
         
-        # make all values from prediction positive
-        pred = (pred + 1e-6).square().sqrt() # numerical stability
-        
         # flatten pred and target to a 2-dim tensor
         pred = pred.view(-1, 5 * B + C) # (-1, 5B + C)
         target = target.view(-1, 5 + C) # (-1, 5 + C)
@@ -78,7 +75,7 @@ class YOLOv1Loss(nn.Module):
         # set the target of the confidence score to be the max IOU and select the responsible predictor
         for i in range(num_obj):
             grid_index = grid_indices[i]
-            pred_bbox = obj_pred_bbox[i][..., 1:].square().sqrt()
+            pred_bbox = obj_pred_bbox[i][..., 1:]
             target_bbox = obj_target_bbox[i][:, 1:5]
             
             # convert to xyxy format
@@ -108,10 +105,7 @@ class YOLOv1Loss(nn.Module):
 
         # wh mse loss
         pred_wh = obj_responsible_bbox[..., 3:]
-        target_wh = obj_target_bbox[..., 3:].squeeze(1)
-        # pred_wh = (pred_wh**2).sqrt()
-        # target_wh = (target_wh**2).sqrt()
-        
+        target_wh = obj_target_bbox[..., 3:].squeeze(1)     
         wh_loss = self.mse(pred_wh.sqrt(), target_wh.sqrt())
 
         localization_loss = lambda_coord * (xy_loss + wh_loss)
@@ -141,6 +135,8 @@ class YOLOv1Loss(nn.Module):
         pred_classification = obj_pred[..., -C:]
         target_classification = obj_target[..., -C:]
         classification_loss = self.mse(pred_classification, target_classification)
+        
+        # print(f"localization: {localization_loss}, confidence: {confidence_loss}, classification: {classification_loss}")
 
         loss = (localization_loss + confidence_loss + classification_loss) / N
 
